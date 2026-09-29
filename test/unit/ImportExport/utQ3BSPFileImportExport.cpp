@@ -3,7 +3,7 @@
 Open Asset Import Library (assimp)
 ---------------------------------------------------------------------------
 
-Copyright (c) 2006-2022, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -58,4 +58,11 @@ public:
 
 TEST_F(utQ3BSPImportExport, importerTest) {
     EXPECT_TRUE(importerTest());
+}
+
+TEST_F(utQ3BSPImportExport, rejectMisalignedMeshVertsLump) {
+    Assimp::Importer importer;
+    const aiScene *scene = importer.ReadFile(
+            ASSIMP_TEST_MODELS_NONBSD_DIR "/PK3/invalid_meshverts_size.pk3", 0);
+    EXPECT_EQ(nullptr, scene);
 }

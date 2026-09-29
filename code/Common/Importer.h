@@ -2,7 +2,7 @@
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
-Copyright (c) 2006-2022, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -52,7 +52,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 struct aiScene;
 
-namespace Assimp    {
+namespace Assimp {
     class ProgressHandler;
     class IOSystem;
     class BaseImporter;
@@ -74,11 +74,11 @@ public:
     typedef unsigned int KeyType;
 
     // typedefs for our configuration maps.
-    typedef std::map<KeyType, int> IntPropertyMap;
-    typedef std::map<KeyType, ai_real> FloatPropertyMap;
-    typedef std::map<KeyType, std::string> StringPropertyMap;
-    typedef std::map<KeyType, aiMatrix4x4> MatrixPropertyMap;
-    typedef std::map<KeyType, void*> PointerPropertyMap;
+    using IntPropertyMap = std::map<KeyType, int>;
+    using FloatPropertyMap = std::map<KeyType, ai_real>;
+    using StringPropertyMap = std::map<KeyType, std::string>;
+    using MatrixPropertyMap = std::map<KeyType, aiMatrix4x4>;
+    using PointerPropertyMap = std::map<KeyType, void*>;
 
     /** IO handler to use for all file accesses. */
     IOSystem* mIOHandler;
@@ -128,10 +128,12 @@ public:
 
     /// The default class constructor.
     ImporterPimpl() AI_NO_EXCEPT;
+
+    /// The class destructor.
+    ~ImporterPimpl() = default;
 };
 
-inline
-ImporterPimpl::ImporterPimpl() AI_NO_EXCEPT :
+inline ImporterPimpl::ImporterPimpl() AI_NO_EXCEPT :
         mIOHandler( nullptr ),
         mIsDefaultHandler( false ),
         mProgressHandler( nullptr ),
@@ -230,7 +232,8 @@ public:
      *
      *  @param which LRWC returned by AddLoadRequest().
      *  @return nullptr if there is no scene with this file name
-     *  in the queue of the scene hasn't been loaded yet. */
+     *  in the queue or the scene hasn't been loaded yet. The caller assumes
+     *  ownership of a non-null scene and must delete shared scenes only once. */
     aiScene* GetImport(
         unsigned int which
         );

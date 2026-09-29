@@ -3,7 +3,7 @@
 Open Asset Import Library (assimp)
 ---------------------------------------------------------------------------
 
-Copyright (c) 2006-2022, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -67,86 +67,101 @@ public:
         aiScene *sceneCopy;
     };
 
-    virtual bool importerTest() final {
-        Assimp::Importer importer;
-        const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/duck.dae", aiProcess_ValidateDataStructure);
-        if (scene == nullptr)
-            return false;
+    bool importerTest() final {
+        Importer importer;
+        {
+          const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/duck.dae", aiProcess_ValidateDataStructure);
+          if (scene == nullptr) {
+              return false;
+          }
 
-        // Expected number of items
-        EXPECT_EQ(scene->mNumMeshes, 1u);
-        EXPECT_EQ(scene->mNumMaterials, 1u);
-        EXPECT_EQ(scene->mNumAnimations, 0u);
-        EXPECT_EQ(scene->mNumTextures, 0u);
-        EXPECT_EQ(scene->mNumLights, 1u);
-        EXPECT_EQ(scene->mNumCameras, 1u);
+          // Expected number of items
+          EXPECT_EQ(scene->mNumMeshes, 1u);
+          EXPECT_EQ(scene->mNumMaterials, 1u);
+          EXPECT_EQ(scene->mNumAnimations, 0u);
+          EXPECT_EQ(scene->mNumTextures, 0u);
+          EXPECT_EQ(scene->mNumLights, 1u);
+          EXPECT_EQ(scene->mNumCameras, 1u);
 
-        // Expected common metadata
-        aiString value;
-        EXPECT_TRUE(scene->mMetaData->Get(AI_METADATA_SOURCE_FORMAT, value)) << "No importer format metadata";
-        EXPECT_STREQ("Collada Importer", value.C_Str());
+          // Expected common metadata
+          aiString value;
+          EXPECT_TRUE(scene->mMetaData->Get(AI_METADATA_SOURCE_FORMAT, value)) << "No importer format metadata";
+          EXPECT_STREQ("Collada Importer", value.C_Str());
 
-        EXPECT_TRUE(scene->mMetaData->Get(AI_METADATA_SOURCE_FORMAT_VERSION, value)) << "No format version metadata";
-        EXPECT_STREQ("1.4.1", value.C_Str());
+          EXPECT_TRUE(scene->mMetaData->Get(AI_METADATA_SOURCE_FORMAT_VERSION, value)) << "No format version metadata";
+          EXPECT_STREQ("1.4.1", value.C_Str());
 
-        EXPECT_TRUE(scene->mMetaData->Get(AI_METADATA_SOURCE_GENERATOR, value)) << "No generator metadata";
-        EXPECT_EQ(strncmp(value.C_Str(), "Maya 8.0", 8), 0) << "AI_METADATA_SOURCE_GENERATOR was: " << value.C_Str();
+          EXPECT_TRUE(scene->mMetaData->Get(AI_METADATA_SOURCE_GENERATOR, value)) << "No generator metadata";
+          EXPECT_EQ(strncmp(value.C_Str(), "Maya 8.0", 8), 0) << "AI_METADATA_SOURCE_GENERATOR was: " << value.C_Str();
 
-        EXPECT_TRUE(scene->mMetaData->Get(AI_METADATA_SOURCE_COPYRIGHT, value)) << "No copyright metadata";
-        EXPECT_EQ(strncmp(value.C_Str(), "Copyright 2006", 14), 0) << "AI_METADATA_SOURCE_COPYRIGHT was: " << value.C_Str();
+          EXPECT_TRUE(scene->mMetaData->Get(AI_METADATA_SOURCE_COPYRIGHT, value)) << "No copyright metadata";
+          EXPECT_EQ(strncmp(value.C_Str(), "Copyright 2006", 14), 0) << "AI_METADATA_SOURCE_COPYRIGHT was: " << value.C_Str();
+        }
+
+        {
+          const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/box_nested_animation.dae", aiProcess_ValidateDataStructure);
+          if (scene == nullptr) {
+              return false;
+          }
+
+          // Expect only one animation with the correct name
+          EXPECT_EQ(scene->mNumAnimations, 1u);
+          EXPECT_EQ(std::string(scene->mAnimations[0]->mName.C_Str()), std::string("Armature"));
+
+        }
 
         return true;
     }
 
-    typedef std::pair<std::string, std::string> IdNameString;
-    typedef std::map<std::string, std::string> IdNameMap;
+    using IdNameString = std::pair<std::string, std::string>;
+    using IdNameMap = std::map<std::string, std::string>;
 
     template <typename T>
-    static inline IdNameString GetColladaIdName(const T *item, size_t index) {
+    static IdNameString GetColladaIdName(const T *item, size_t index) {
         std::ostringstream stream;
         stream << typeid(T).name() << "@" << index;
         if (item->mMetaData) {
-            aiString aiStr;
-            if (item->mMetaData->Get(AI_METADATA_COLLADA_ID, aiStr))
+            if (aiString aiStr; item->mMetaData->Get(AI_METADATA_COLLADA_ID, aiStr)) {
                 return std::make_pair(std::string(aiStr.C_Str()), stream.str());
+            }
         }
         return std::make_pair(std::string(), stream.str());
     }
 
     template <typename T>
-    static inline IdNameString GetItemIdName(const T *item, size_t index) {
+    static IdNameString GetItemIdName(const T *item, size_t index) {
         std::ostringstream stream;
         stream << typeid(T).name() << "@" << index;
         return std::make_pair(std::string(item->mName.C_Str()), stream.str());
     }
 
     // Specialisations
-    static inline IdNameString GetItemIdName(aiMaterial *item, size_t index) {
+    static IdNameString GetItemIdName(aiMaterial *item, size_t index) {
         std::ostringstream stream;
         stream << typeid(aiMaterial).name() << "@" << index;
         return std::make_pair(std::string(item->GetName().C_Str()), stream.str());
     }
 
-    static inline IdNameString GetItemIdName(aiTexture *item, size_t index) {
+    static IdNameString GetItemIdName(const aiTexture *item, size_t index) {
         std::ostringstream stream;
         stream << typeid(aiTexture).name() << "@" << index;
         return std::make_pair(std::string(item->mFilename.C_Str()), stream.str());
     }
 
-    static inline void ReportDuplicate(IdNameMap &itemIdMap, const IdNameString &namePair, const char *typeNameStr) {
+    static void ReportDuplicate(IdNameMap &itemIdMap, const IdNameString &namePair, const char *typeNameStr) {
         const auto result = itemIdMap.insert(namePair);
         EXPECT_TRUE(result.second) << "Duplicate '" << typeNameStr << "' name: '" << namePair.first << "'. " << namePair.second << " == " << result.first->second;
     }
 
     template <typename T>
-    static inline void CheckUniqueIds(IdNameMap &itemIdMap, unsigned int itemCount, T **itemArray) {
+    static void CheckUniqueIds(IdNameMap &itemIdMap, unsigned int itemCount, T **itemArray) {
         for (size_t idx = 0; idx < itemCount; ++idx) {
             IdNameString namePair = GetItemIdName(itemArray[idx], idx);
             ReportDuplicate(itemIdMap, namePair, typeid(T).name());
         }
     }
 
-    static inline void CheckUniqueIds(IdNameMap &itemIdMap, const aiNode *parent, size_t index) {
+    static void CheckUniqueIds(IdNameMap &itemIdMap, const aiNode *parent, size_t index) {
         IdNameString namePair = GetItemIdName(parent, index);
         ReportDuplicate(itemIdMap, namePair, typeid(aiNode).name());
 
@@ -155,7 +170,7 @@ public:
         }
     }
 
-    static inline void CheckNodeIdNames(IdNameMap &nodeIdMap, IdNameMap &nodeNameMap, const aiNode *parent, size_t index) {
+    static void CheckNodeIdNames(IdNameMap &nodeIdMap, IdNameMap &nodeNameMap, const aiNode *parent, size_t index) {
         IdNameString namePair = GetItemIdName(parent, index);
         IdNameString idPair = GetColladaIdName(parent, index);
         ReportDuplicate(nodeIdMap, idPair, typeid(aiNode).name());
@@ -165,7 +180,7 @@ public:
         }
     }
 
-    static inline void SetAllNodeNames(const aiString &newName, aiNode *node) {
+    static void SetAllNodeNames(const aiString &newName, aiNode *node) {
         node->mName = newName;
         for (size_t idx = 0; idx < node->mNumChildren; ++idx) {
             SetAllNodeNames(newName, node->mChildren[idx]);
@@ -174,7 +189,7 @@ public:
 
     void ImportAndCheckIds(const char *file, const aiScene *origScene) {
         // Import the Collada using the 'default' where aiNode and aiMesh names are the Collada ids
-        Assimp::Importer importer;
+        Importer importer;
         const aiScene *scene = importer.ReadFile(file, aiProcess_ValidateDataStructure);
         ASSERT_TRUE(scene != nullptr) << "Fatal: could not re-import " << file;
         EXPECT_EQ(origScene->mNumMeshes, scene->mNumMeshes) << "in " << file;
@@ -197,7 +212,7 @@ public:
     void ImportAsNames(const char *file, const aiScene *origScene) {
         // Import the Collada but using the user-visible names for aiNode and aiMesh
         // Note that this mode may not support bones or animations
-        Assimp::Importer importer;
+        Importer importer;
         importer.SetPropertyInteger(AI_CONFIG_IMPORT_COLLADA_USE_COLLADA_NAMES, 1);
 
         const aiScene *scene = importer.ReadFile(file, aiProcess_ValidateDataStructure);
@@ -225,6 +240,183 @@ TEST_F(utColladaImportExport, importDaeFromFileTest) {
     EXPECT_TRUE(importerTest());
 }
 
+
+TEST_F(utColladaImportExport, importDaeAnims) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/anims_with_full_rotations_between_keys.DAE", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importCameras) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/cameras.dae", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importCinema4D) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/Cinema4D.dae", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importCollada) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/COLLADA.dae", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importTriangulate) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/COLLADA_triangulate.dae", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importConcavePolygon) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/ConcavePolygon.dae", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importCubeEmptyTags) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/cube_emptyTags.dae", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importCubeTriangulate) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/cube_triangulate.dae", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importCubeTristrips) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/cube_tristrips.dae", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importCubeUTF16) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/cube_UTF16LE.dae", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importCubeUTF8) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/cube_UTF8BOM.dae", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importCube2UVs) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/cube_with_2UVs.DAE", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importCubeSpecialChars) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/cube_xmlspecialchars.dae", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importDuckTriangulate) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/duck_triangulate.dae", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importEarthCylindrical) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/earthCylindrical.DAE", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importKwxport) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/kwxport_test_vcolors.dae", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importAnimationLibrary) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/library_animation_clips.dae", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importLights) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/lights.dae", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importRegr01) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/regr01.dae", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importSphere) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/sphere.dae", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importSphereTriangulate) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/sphere_triangulate.dae", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
+TEST_F(utColladaImportExport, importTeapot) {
+    Importer importer;
+
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/teapot_instancenodes.DAE", aiProcess_ValidateDataStructure);
+    ASSERT_NE(scene, nullptr);
+}
+
+
 unsigned int GetMeshUseCount(const aiNode *rootNode) {
     unsigned int result = rootNode->mNumMeshes;
     for (unsigned int i = 0; i < rootNode->mNumChildren; ++i) {
@@ -236,8 +428,8 @@ unsigned int GetMeshUseCount(const aiNode *rootNode) {
 #ifndef ASSIMP_BUILD_NO_EXPORT
 
 TEST_F(utColladaImportExport, exportRootNodeMeshTest) {
-    Assimp::Importer importer;
-    Assimp::Exporter exporter;
+    Importer importer;
+    Exporter exporter;
     const char *outFile = "exportRootNodeMeshTest_out.dae";
 
     const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/duck.dae", aiProcess_ValidateDataStructure);
@@ -282,8 +474,8 @@ TEST_F(utColladaImportExport, exportRootNodeMeshTest) {
 }
 
 TEST_F(utColladaImportExport, exporterUniqueIdsTest) {
-    Assimp::Importer importer;
-    Assimp::Exporter exporter;
+    Importer importer;
+    Exporter exporter;
     const char *outFileEmpty = "exportMeshIdTest_empty_out.dae";
     const char *outFileNamed = "exportMeshIdTest_named_out.dae";
 
@@ -344,6 +536,14 @@ TEST_F(utColladaImportExport, exporterUniqueIdsTest) {
     ImportAsNames(outFileNamed, scene);
 }
 
+// This file is invalid, we just want to ensure that the importer is not crashing
+// This was reported as GH#4286. The "count" parameter in "Cube-mesh-positions-array" is too small.
+TEST_F(utColladaImportExport, parseInvalid4286) {
+    Assimp::Importer importer;
+    const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/invalid/box_nested_animation_4286.dae", 0);
+    EXPECT_EQ(nullptr, scene);
+}
+
 #endif
 
 class utColladaZaeImportExport : public AbstractImportExportBase {
@@ -388,7 +588,7 @@ TEST_F(utColladaZaeImportExport, importBlenFromFileTest) {
 }
 
 TEST_F(utColladaZaeImportExport, importMakeHumanTest) {
-    Assimp::Importer importer;
+    Importer importer;
     const aiScene *scene = importer.ReadFile(ASSIMP_TEST_MODELS_DIR "/Collada/human.zae", aiProcess_ValidateDataStructure);
     ASSERT_NE(nullptr, scene);
 
@@ -407,4 +607,23 @@ TEST_F(utColladaZaeImportExport, importMakeHumanTest) {
 
     EXPECT_TRUE(scene->mMetaData->Get(AI_METADATA_SOURCE_FORMAT_VERSION, value)) << "No format version metadata";
     EXPECT_STREQ("1.4.1", value.C_Str());
+}
+
+static constexpr  char kData[] = " \
+<?xml version=\"1.0\" encoding=\"utf-8\"?> \
+<COLLADA version=\"1.4.1\"> \
+  <library_geometries> \
+    <geometry id=\"fuzz2772-geo\" name=\"fuzz2772\"> \
+      <mesh> \
+        <triangles count=\"1\"><input semantic=\"VERTEXERTEX\" source=\"#fuzz2772-verts\" offset=\"0\"/><p>0 1 2</p></triangles> \
+      </mesh> \
+    </geometry> \
+  </library_geometries> \
+</COLLADA> \
+";
+
+TEST_F(utColladaZaeImportExport, import_causes_heap_overflow_issue6373) {
+    Importer importer;
+    const aiScene *scene = importer.ReadFileFromMemory(kData, sizeof(kData), aiProcess_ValidateDataStructure);
+    EXPECT_EQ(nullptr, scene);
 }

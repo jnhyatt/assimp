@@ -2,7 +2,7 @@
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
-Copyright (c) 2006-2022, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -44,6 +44,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  * glTF Extensions Support:
  *   KHR_materials_pbrSpecularGlossiness full
+ *   KHR_materials_specular full
  *   KHR_materials_unlit full
  *   KHR_lights_punctual full
  *   KHR_materials_sheen full
@@ -51,17 +52,19 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *   KHR_materials_transmission full
  *   KHR_materials_volume full
  *   KHR_materials_ior full
+ *   KHR_materials_emissive_strength full
+ *   KHR_materials_anisotropy full
  */
 #ifndef GLTF2ASSET_H_INC
 #define GLTF2ASSET_H_INC
 
-#if !defined(ASSIMP_BUILD_NO_GLTF_IMPORTER) && !defined(ASSIMP_BUILD_NO_GLTF2_IMPORTER)
+//#if !defined(ASSIMP_BUILD_NO_GLTF_IMPORTER) && !defined(ASSIMP_BUILD_NO_GLTF2_IMPORTER)
 
 #include <assimp/Exceptional.h>
 
 #include <algorithm>
 #include <list>
-#include <map>
+#include <unordered_map>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -92,7 +95,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #   define ai_assert
 #endif
 
-#if _MSC_VER > 1500 || (defined __GNUC___)
+#if _MSC_VER > 1500 || (defined __GNUC__)
 #   define ASSIMP_GLTF_USE_UNORDERED_MULTIMAP
 #else
 #   define gltf_unordered_map map
@@ -116,7 +119,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <assimp/material.h>
 #include <assimp/GltfMaterial.h>
 
-#include "AssetLib/glTF/glTFCommon.h"
+#include "AssetLib/glTFCommon/glTFCommon.h"
 
 namespace glTF2 {
 
@@ -361,18 +364,17 @@ struct CustomExtension {
     }
 
     CustomExtension() = default;
-
     ~CustomExtension() = default;
+    CustomExtension(const CustomExtension &other) = default;
+    CustomExtension& operator=(const CustomExtension&) = default;
+};
 
-    CustomExtension(const CustomExtension &other) :
-            name(other.name),
-            mStringValue(other.mStringValue),
-            mDoubleValue(other.mDoubleValue),
-            mUint64Value(other.mUint64Value),
-            mInt64Value(other.mInt64Value),
-            mBoolValue(other.mBoolValue),
-            mValues(other.mValues) {
-        // empty
+//! Represents metadata in an glTF2 object
+struct Extras {
+    std::vector<CustomExtension> mValues;
+
+    inline bool HasExtras() const {
+        return !mValues.empty();
     }
 };
 
@@ -384,12 +386,12 @@ struct Object {
     std::string name; //!< The user-defined name of this object
 
     CustomExtension customExtensions;
-    CustomExtension extras;
+    Extras extras;
 
     //! Objects marked as special are not exported (used to emulate the binary body buffer)
     virtual bool IsSpecial() const { return false; }
 
-    virtual ~Object() {}
+    virtual ~Object() = default;
 
     //! Maps special IDs to another ID, where needed. Subclasses may override it (statically)
     static const char *TranslateId(Asset & /*r*/, const char *id) { return id; }
@@ -418,7 +420,6 @@ public:
         Type_text
     };
 
-    /// \struct SEncodedRegion
     /// Descriptor of encoded region in "bufferView".
     struct SEncodedRegion {
         const size_t Offset; ///< Offset from begin of "bufferView" to encoded region, in bytes.
@@ -427,7 +428,6 @@ public:
         const size_t DecodedData_Length; ///< Size of decoded region, in bytes.
         const std::string ID; ///< ID of the region.
 
-        /// \fn SEncodedRegion(const size_t pOffset, const size_t pEncodedData_Length, uint8_t* pDecodedData, const size_t pDecodedData_Length, const std::string pID)
         /// Constructor.
         /// \param [in] pOffset - offset from begin of "bufferView" to encoded region, in bytes.
         /// \param [in] pEncodedData_Length - size of encoded region, in bytes.
@@ -441,7 +441,6 @@ public:
                 DecodedData_Length(pDecodedData_Length),
                 ID(pID) {}
 
-        /// \fn ~SEncodedRegion()
         /// Destructor.
         ~SEncodedRegion() { delete[] DecodedData; }
     };
@@ -455,7 +454,6 @@ public:
 
     Type type;
 
-    /// \var EncodedRegion_Current
     /// Pointer to currently active encoded region.
     /// Why not decoding all regions at once and not to set one buffer with decoded data?
     /// Yes, why not? Even "accessor" point to decoded data. I mean that fields "byteOffset", "byteStride" and "count" has values which describes decoded
@@ -489,13 +487,12 @@ private:
 
 public:
     Buffer();
-    ~Buffer();
+    ~Buffer() override;
 
     void Read(Value &obj, Asset &r);
 
     bool LoadFromStream(IOStream &stream, size_t length = 0, size_t baseOffset = 0);
 
-    /// \fn void EncodedRegion_Mark(const size_t pOffset, const size_t pEncodedData_Length, uint8_t* pDecodedData, const size_t pDecodedData_Length, const std::string& pID)
     /// Mark region of "bufferView" as encoded. When data is request from such region then "bufferView" use decoded data.
     /// \param [in] pOffset - offset from begin of "bufferView" to encoded region, in bytes.
     /// \param [in] pEncodedData_Length - size of encoded region, in bytes.
@@ -504,12 +501,10 @@ public:
     /// \param [in] pID - ID of the region.
     void EncodedRegion_Mark(const size_t pOffset, const size_t pEncodedData_Length, uint8_t *pDecodedData, const size_t pDecodedData_Length, const std::string &pID);
 
-    /// \fn void EncodedRegion_SetCurrent(const std::string& pID)
     /// Select current encoded region by ID. \sa EncodedRegion_Current.
     /// \param [in] pID - ID of the region.
     void EncodedRegion_SetCurrent(const std::string &pID);
 
-    /// \fn bool ReplaceData(const size_t pBufferData_Offset, const size_t pBufferData_Count, const uint8_t* pReplace_Data, const size_t pReplace_Count)
     /// Replace part of buffer data. Pay attention that function work with original array of data (\ref mData) not with encoded regions.
     /// \param [in] pBufferData_Offset - index of first element in buffer from which new data will be placed.
     /// \param [in] pBufferData_Count - count of bytes in buffer which will be replaced.
@@ -543,7 +538,7 @@ struct BufferView : public Object {
     BufferViewTarget target; //! The target that the WebGL buffer should be bound to.
 
     void Read(Value &obj, Asset &r);
-    uint8_t *GetPointer(size_t accOffset);
+    uint8_t *GetPointerAndTailSize(size_t accOffset, size_t& outTailSize);
 };
 
 //! A typed view into a BufferView. A BufferView contains raw binary data.
@@ -561,7 +556,7 @@ struct Accessor : public Object {
     std::vector<double> min; //!< Minimum value of each component in this attribute.
     std::unique_ptr<Sparse> sparse;
     std::unique_ptr<Buffer> decodedBuffer; // Packed decoded data, returned instead of original bufferView if present
-
+    bool normalized;
     unsigned int GetNumComponents();
     unsigned int GetBytesPerComponent();
     unsigned int GetElementSize();
@@ -571,7 +566,7 @@ struct Accessor : public Object {
     inline size_t GetMaxByteSize();
 
     template <class T>
-    void ExtractData(T *&outData);
+    size_t ExtractData(T *&outData, const std::vector<unsigned int> *remappingIndices = nullptr);
 
     void WriteData(size_t count, const void *src_buffer, size_t src_stride);
     void WriteSparseValues(size_t count, const void *src_data, size_t src_dataStride);
@@ -611,7 +606,7 @@ struct Accessor : public Object {
         return Indexer(*this);
     }
 
-    Accessor() {}
+    Accessor() = default;
     void Read(Value &obj, Asset &r);
 
     //sparse
@@ -625,7 +620,7 @@ struct Accessor : public Object {
 
         std::vector<uint8_t> data; //!< Actual data, which may be defaulted to an array of zeros or the original data, with the sparse buffer view applied on top of it.
 
-        void PopulateData(size_t numBytes, uint8_t *bytes);
+        void PopulateData(size_t numBytes, const uint8_t *bytes);
         void PatchData(unsigned int elementSize);
     };
 };
@@ -679,7 +674,7 @@ struct Light : public Object {
     float innerConeAngle;
     float outerConeAngle;
 
-    Light() {}
+    Light() = default;
     void Read(Value &obj, Asset &r);
 };
 
@@ -716,6 +711,7 @@ const vec4 defaultBaseColor = { 1, 1, 1, 1 };
 const vec3 defaultEmissiveFactor = { 0, 0, 0 };
 const vec4 defaultDiffuseFactor = { 1, 1, 1, 1 };
 const vec3 defaultSpecularFactor = { 1, 1, 1 };
+const vec3 defaultSpecularColorFactor = { 1, 1, 1 };
 const vec3 defaultSheenFactor = { 0, 0, 0 };
 const vec3 defaultAttenuationColor = { 1, 1, 1 };
 
@@ -759,6 +755,16 @@ struct PbrSpecularGlossiness {
     void SetDefaults();
 };
 
+struct MaterialSpecular {
+    float specularFactor;
+    vec3 specularColorFactor;
+    TextureInfo specularTexture;
+    TextureInfo specularColorTexture;
+
+    MaterialSpecular() { SetDefaults(); }
+    void SetDefaults();
+};
+
 struct MaterialSheen {
     vec3 sheenColorFactor;
     float sheenRoughnessFactor;
@@ -799,6 +805,22 @@ struct MaterialIOR {
     void SetDefaults();
 };
 
+struct MaterialEmissiveStrength {
+    float emissiveStrength = 0.f;
+
+    MaterialEmissiveStrength() { SetDefaults(); }
+    void SetDefaults();
+};
+
+struct MaterialAnisotropy {
+    float anisotropyStrength = 0.f;
+    float anisotropyRotation = 0.f;
+    TextureInfo anisotropyTexture;
+
+    MaterialAnisotropy() { SetDefaults(); }
+    void SetDefaults();
+};
+
 //! The material appearance of a primitive.
 struct Material : public Object {
     //PBR metallic roughness properties
@@ -816,6 +838,9 @@ struct Material : public Object {
     //extension: KHR_materials_pbrSpecularGlossiness
     Nullable<PbrSpecularGlossiness> pbrSpecularGlossiness;
 
+    //extension: KHR_materials_specular
+    Nullable<MaterialSpecular> materialSpecular;
+
     //extension: KHR_materials_sheen
     Nullable<MaterialSheen> materialSheen;
 
@@ -830,7 +855,13 @@ struct Material : public Object {
 
     //extension: KHR_materials_ior
     Nullable<MaterialIOR> materialIOR;
-    
+
+    //extension: KHR_materials_emissive_strength
+    Nullable<MaterialEmissiveStrength> materialEmissiveStrength;
+
+    //extension: KHR_materials_anisotropy
+    Nullable<MaterialAnisotropy> materialAnisotropy;
+
     //extension: KHR_materials_unlit
     bool unlit;
 
@@ -875,7 +906,7 @@ struct Mesh : public Object {
     std::vector<float> weights;
     std::vector<std::string> targetNames;
 
-    Mesh() {}
+    Mesh() = default;
 
     /// Get mesh data from JSON-object and place them to root asset.
     /// \param [in] pJSON_Object - reference to pJSON-object from which data are read.
@@ -901,12 +932,12 @@ struct Node : public Object {
 
     Ref<Node> parent; //!< This is not part of the glTF specification. Used as a helper.
 
-    Node() {}
+    Node() = default;
     void Read(Value &obj, Asset &r);
 };
 
 struct Program : public Object {
-    Program() {}
+    Program() = default;
     void Read(Value &obj, Asset &r);
 };
 
@@ -925,12 +956,12 @@ struct Scene : public Object {
     std::string name;
     std::vector<Ref<Node>> nodes;
 
-    Scene() {}
+    Scene() = default;
     void Read(Value &obj, Asset &r);
 };
 
 struct Shader : public Object {
-    Shader() {}
+    Shader() = default;
     void Read(Value &obj, Asset &r);
 };
 
@@ -940,7 +971,7 @@ struct Skin : public Object {
     std::vector<Ref<Node>> jointNames; //!< Joint names of the joints (nodes with a jointName property) in this skin.
     std::string name; //!< The user-defined name of this object.
 
-    Skin() {}
+    Skin() = default;
     void Read(Value &obj, Asset &r);
 };
 
@@ -955,47 +986,44 @@ struct Texture : public Object {
     //TextureTarget target; //!< The target that the WebGL texture should be bound to. (default: TextureTarget_TEXTURE_2D)
     //TextureType type; //!< Texel datatype. (default: TextureType_UNSIGNED_BYTE)
 
-    Texture() {}
+    Texture() = default;
     void Read(Value &obj, Asset &r);
 };
 
 struct Animation : public Object {
     struct Sampler {
-        Sampler() :
-                interpolation(Interpolation_LINEAR) {}
+        Sampler() = default;
 
         Ref<Accessor> input; //!< Accessor reference to the buffer storing the key-frame times.
         Ref<Accessor> output; //!< Accessor reference to the buffer storing the key-frame values.
-        Interpolation interpolation; //!< Type of interpolation algorithm to use between key-frames.
+        Interpolation interpolation{Interpolation_LINEAR}; //!< Type of interpolation algorithm to use between key-frames.
     };
 
     struct Target {
-        Target() :
-                path(AnimationPath_TRANSLATION) {}
+        Target() = default;
 
         Ref<Node> node; //!< The node to animate.
-        AnimationPath path; //!< The property of the node to animate.
+        AnimationPath path{AnimationPath_TRANSLATION}; //!< The property of the node to animate.
     };
 
     struct Channel {
-        Channel() :
-                sampler(-1) {}
+        Channel() = default;
 
-        int sampler; //!< The sampler index containing the animation data.
+        int sampler{-1}; //!< The sampler index containing the animation data.
         Target target; //!< The node and property to animate.
     };
 
     std::vector<Sampler> samplers; //!< All the key-frame data for this animation.
     std::vector<Channel> channels; //!< Data to connect nodes to key-frames.
 
-    Animation() {}
+    Animation() = default;
     void Read(Value &obj, Asset &r);
 };
 
 //! Base class for LazyDict that acts as an interface
 class LazyDictBase {
 public:
-    virtual ~LazyDictBase() {}
+    virtual ~LazyDictBase() = default;
 
     virtual void AttachToDocument(Document &doc) = 0;
     virtual void DetachFromDocument() = 0;
@@ -1042,7 +1070,7 @@ class LazyDict : public LazyDictBase {
     Ref<T> Add(T *obj);
 
 public:
-    LazyDict(Asset &asset, const char *dictId, const char *extId = 0);
+    LazyDict(Asset &asset, const char *dictId, const char *extId = nullptr);
     ~LazyDict();
 
     Ref<T> Retrieve(unsigned int i);
@@ -1073,8 +1101,7 @@ struct AssetMetadata {
 
     void Read(Document &doc);
 
-    AssetMetadata() :
-            version() {}
+    AssetMetadata() = default;
 };
 
 //
@@ -1095,44 +1122,34 @@ class Asset {
 public:
     //! Keeps info about the enabled extensions
     struct Extensions {
-        bool KHR_materials_pbrSpecularGlossiness;
-        bool KHR_materials_unlit;
-        bool KHR_lights_punctual;
-        bool KHR_texture_transform;
-        bool KHR_materials_sheen;
-        bool KHR_materials_clearcoat;
-        bool KHR_materials_transmission;
-        bool KHR_materials_volume;
-        bool KHR_materials_ior;
-        bool KHR_draco_mesh_compression;
-        bool FB_ngon_encoding;
-        bool KHR_texture_basisu;
+        bool KHR_materials_pbrSpecularGlossiness{false};
+        bool KHR_materials_specular{false};
+        bool KHR_materials_unlit{false};
+        bool KHR_lights_punctual{false};
+        bool KHR_texture_transform{false};
+        bool KHR_materials_sheen{false};
+        bool KHR_materials_clearcoat{false};
+        bool KHR_materials_transmission{false};
+        bool KHR_materials_volume{false};
+        bool KHR_materials_ior{false};
+        bool KHR_materials_emissive_strength{false};
+        bool KHR_materials_anisotropy{false};
+        bool KHR_draco_mesh_compression{false};
+        bool FB_ngon_encoding{false};
+        bool KHR_texture_basisu{false};
+        bool EXT_texture_webp{false};
 
-        Extensions() :
-                KHR_materials_pbrSpecularGlossiness(false), 
-                KHR_materials_unlit(false), 
-                KHR_lights_punctual(false), 
-                KHR_texture_transform(false), 
-                KHR_materials_sheen(false), 
-                KHR_materials_clearcoat(false), 
-                KHR_materials_transmission(false), 
-                KHR_materials_volume(false),
-                KHR_materials_ior(false),
-                KHR_draco_mesh_compression(false),
-                FB_ngon_encoding(false),
-                KHR_texture_basisu(false) {
-            // empty
-        }
+        Extensions() = default;
+        ~Extensions() = default;
     } extensionsUsed;
 
     //! Keeps info about the required extensions
     struct RequiredExtensions {
-        bool KHR_draco_mesh_compression;
-        bool KHR_texture_basisu;
+        bool KHR_draco_mesh_compression{false};
+        bool KHR_texture_basisu{false};
+        bool EXT_texture_webp{false};
 
-        RequiredExtensions() : KHR_draco_mesh_compression(false), KHR_texture_basisu(false) {
-            // empty
-        }
+        RequiredExtensions() = default;
     } extensionsRequired;
 
     AssetMetadata asset;
@@ -1220,8 +1237,8 @@ private:
     size_t mSceneLength;
     size_t mBodyOffset;
     size_t mBodyLength;
-    IdMap mUsedIds;
     Ref<Buffer> mBodyBuffer;
+    std::unordered_map<std::string, int> lastUsedID;
 };
 
 inline std::string getContextForErrorMessages(const std::string &id, const std::string &name) {
@@ -1237,6 +1254,6 @@ inline std::string getContextForErrorMessages(const std::string &id, const std::
 // Include the implementation of the methods
 #include "glTF2Asset.inl"
 
-#endif // ASSIMP_BUILD_NO_GLTF_IMPORTER
+//#endif // ASSIMP_BUILD_NO_GLTF_IMPORTER
 
 #endif // GLTF2ASSET_H_INC

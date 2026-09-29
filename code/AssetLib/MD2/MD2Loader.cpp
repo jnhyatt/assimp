@@ -3,9 +3,7 @@
 Open Asset Import Library (assimp)
 ---------------------------------------------------------------------------
 
-Copyright (c) 2006-2022, assimp team
-
-
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -41,7 +39,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ---------------------------------------------------------------------------
 */
 
-
 #ifndef ASSIMP_BUILD_NO_MD2_IMPORTER
 
 /** @file Implementation of the MD2 importer class */
@@ -65,7 +62,7 @@ using namespace Assimp::MD2;
 #   define ARRAYSIZE(_array) (int(sizeof(_array) / sizeof(_array[0])))
 #endif
 
-static const aiImporterDesc desc = {
+static constexpr aiImporterDesc desc = {
     "Quake II Mesh Importer",
     "",
     "",
@@ -79,7 +76,7 @@ static const aiImporterDesc desc = {
 };
 
 // ------------------------------------------------------------------------------------------------
-// Helper function to lookup a normal in Quake 2's precalculated table
+// Helper function to lookup a normal in Quake 2's pre-calculated table
 void MD2::LookupNormalIndex(uint8_t iNormalIndex,aiVector3D& vOut)
 {
     // make sure the normal index has a valid value
@@ -101,15 +98,10 @@ MD2Importer::MD2Importer()
 {}
 
 // ------------------------------------------------------------------------------------------------
-// Destructor, private as well
-MD2Importer::~MD2Importer()
-{}
-
-// ------------------------------------------------------------------------------------------------
 // Returns whether the class can handle the format of the given file.
 bool MD2Importer::CanRead( const std::string& pFile, IOSystem* pIOHandler, bool /*checkSig*/) const
 {
-    static const uint32_t tokens[] = { AI_MD2_MAGIC_NUMBER_LE };
+    static constexpr uint32_t tokens[] = { AI_MD2_MAGIC_NUMBER_LE };
     return CheckMagicToken(pIOHandler,pFile,tokens,AI_COUNT_OF(tokens));
 }
 
@@ -151,6 +143,9 @@ void MD2Importer::ValidateHeader( )
     // check some values whether they are valid
     if (0 == m_pcHeader->numFrames)
         throw DeadlyImportError( "Invalid MD2 file: NUM_FRAMES is 0");
+
+    if (0 == m_pcHeader->numVertices)
+        throw DeadlyImportError( "Invalid MD2 file: NUM_VERTICES is 0");
 
     if (m_pcHeader->offsetEnd > (uint32_t)fileSize)
         throw DeadlyImportError( "Invalid MD2 file: File is too small");
@@ -206,7 +201,7 @@ void MD2Importer::InternReadFile( const std::string& pFile,
     std::unique_ptr<IOStream> file( pIOHandler->Open( pFile));
 
     // Check whether we can read from the file
-    if (file.get() == nullptr) {
+    if (file == nullptr) {
         throw DeadlyImportError("Failed to open MD2 file ", pFile, "");
     }
 
@@ -313,8 +308,7 @@ void MD2Importer::InternReadFile( const std::string& pFile,
     const int iMode = (int)aiShadingMode_Gouraud;
     pcHelper->AddProperty<int>(&iMode, 1, AI_MATKEY_SHADING_MODEL);
 
-    if (m_pcHeader->numTexCoords && m_pcHeader->numSkins)
-    {
+    if (m_pcHeader->numTexCoords && m_pcHeader->numSkins) {
         // navigate to the first texture associated with the mesh
         const MD2::Skin* pcSkins = (const MD2::Skin*) ((unsigned char*)m_pcHeader +
             m_pcHeader->offsetSkins);
@@ -327,21 +321,28 @@ void MD2Importer::InternReadFile( const std::string& pFile,
         clr.b = clr.g = clr.r = 0.05f;
         pcHelper->AddProperty<aiColor3D>(&clr, 1,AI_MATKEY_COLOR_AMBIENT);
 
-        if (pcSkins->name[0])
-        {
+        const ai_uint32 MaxNameLength = AI_MAXLEN - 1; // one byte reserved for \0
+        // pcSkins->name is a fixed-size field copied straight out of the file
+        // buffer with no guarantee of a terminating NUL, so a plain strlen()
+        // can walk past the end of that buffer on a malformed file. Cap the
+        // scan at one less than the field's size, matching how MDCLoader
+        // handles the same kind of fixed-size name field.
+        auto iLen = static_cast<ai_uint32>(::strnlen(pcSkins->name, sizeof(pcSkins->name) - 1));
+        bool nameTooLong = iLen > MaxNameLength;
+
+        if (pcSkins->name[0] && !nameTooLong) {
             aiString szString;
-            const ai_uint32 iLen = (ai_uint32) ::strlen(pcSkins->name);
-            ::memcpy(szString.data,pcSkins->name,iLen);
+            ::memcpy(szString.data, pcSkins->name, iLen);
             szString.data[iLen] = '\0';
             szString.length = iLen;
 
             pcHelper->AddProperty(&szString,AI_MATKEY_TEXTURE_DIFFUSE(0));
-        }
-        else{
+        } else if (nameTooLong) {
+            ASSIMP_LOG_WARN("Texture file name is too long. It will be skipped.");
+        } else{
             ASSIMP_LOG_WARN("Texture file name has zero length. It will be skipped.");
         }
-    }
-    else    {
+    } else {
         // apply a default material
         aiColor3D clr;
         clr.b = clr.g = clr.r = 0.6f;
@@ -363,11 +364,11 @@ void MD2Importer::InternReadFile( const std::string& pFile,
         pcHelper->AddProperty(&sz,AI_MATKEY_TEXTURE_DIFFUSE(0));
     }
 
-
     // now read all triangles of the first frame, apply scaling and translation
     unsigned int iCurrent = 0;
 
-    float fDivisorU = 1.0f,fDivisorV = 1.0f;
+    float fDivisorU = 1.0f;
+	float fDivisorV = 1.0f;
     if (m_pcHeader->numTexCoords)   {
         // allocate storage for texture coordinates, too
         pcMesh->mTextureCoords[0] = new aiVector3D[pcMesh->mNumVertices];

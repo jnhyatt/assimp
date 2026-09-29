@@ -1,6 +1,6 @@
 # Open Asset Import Library (assimp)
 # ----------------------------------------------------------------------
-# Copyright (c) 2006-2022, assimp team
+# Copyright (c) 2006-2026, assimp team
 #
 # All rights reserved.
 #
@@ -45,8 +45,8 @@ INCLUDE_DIRECTORIES(
 
 if(NOT ASSIMP_HUNTER_ENABLED)
   INCLUDE_DIRECTORIES(
-    ${Assimp_SOURCE_DIR}/contrib/gtest/include
-    ${Assimp_SOURCE_DIR}/contrib/gtest/
+    ${Assimp_SOURCE_DIR}/contrib/googletest/googletest/include
+    ${Assimp_SOURCE_DIR}/contrib/googletest/googletest/
     ${Assimp_SOURCE_DIR}/contrib/pugixml/src
   )
 endif()
@@ -58,6 +58,14 @@ endif()
 # Add the temporary output directories to the library path to make sure the
 # Assimp library can be found, even if it is not installed system-wide yet.
 LINK_DIRECTORIES( ${Assimp_BINARY_DIR} ${AssetImporter_BINARY_DIR}/lib )
+
+if(ASSIMP_INSTALL_TESTS)
+  include(GNUInstallDirs)
+endif()
+
+SET(TOOLS
+    unit/Tools/TestTools.h
+)
 
 SET( COMMON
   unit/utSimd.cpp
@@ -71,7 +79,6 @@ SET( COMMON
   unit/AssimpAPITest_aiQuaternion.cpp
   unit/AssimpAPITest_aiVector2D.cpp
   unit/AssimpAPITest_aiVector3D.cpp
-  unit/Common/utHash.cpp
   unit/MathTest.cpp
   unit/MathTest.h
   unit/RandomNumberGeneration.h
@@ -87,9 +94,11 @@ SET( COMMON
   unit/TestModelFactory.h
   unit/utTypes.cpp
   unit/utVersion.cpp
+  unit/Common/utParsingUtils.cpp
   unit/utProfiler.cpp
   unit/utSharedPPData.cpp
   unit/utStringUtils.cpp
+  unit/Common/utMaybe.cpp
   unit/Common/utMesh.cpp
   unit/Common/utStandardShapes.cpp
   unit/Common/uiScene.cpp
@@ -98,6 +107,13 @@ SET( COMMON
   unit/Common/utAssertHandler.cpp
   unit/Common/utXmlParser.cpp
   unit/Common/utBase64.cpp
+  unit/Common/utHash.cpp
+  unit/Common/utBaseProcess.cpp
+  unit/Common/utLogger.cpp
+)
+
+SET(Geometry 
+    unit/Geometry/utGeometryUtils.cpp
 )
 
 SET( IMPORTERS
@@ -139,6 +155,7 @@ SET( IMPORTERS
   unit/utColladaImportExport.cpp
   unit/utCSMImportExport.cpp
   unit/utB3DImportExport.cpp
+  unit/utNDOImportExport.cpp
   #unit/utM3DImportExport.cpp
   unit/utMDCImportExport.cpp
   unit/utAssbinImportExport.cpp
@@ -147,19 +164,29 @@ SET( IMPORTERS
   unit/ImportExport/utOgreImportExport.cpp
   unit/ImportExport/utQ3BSPFileImportExport.cpp
   unit/ImportExport/utOFFImportExport.cpp
+  unit/utOFFSecurity.cpp
   unit/ImportExport/utNFFImportExport.cpp
   unit/ImportExport/utXGLImportExport.cpp
   unit/ImportExport/utMD2Importer.cpp
   #unit/ImportExport/utMD3Importer.cpp
   unit/ImportExport/utMD5Importer.cpp
+  unit/ImportExport/utIQMImporter.cpp
   unit/ImportExport/utMDLImporter.cpp
+  unit/ImportExport/IRR/utIrrImportExport.cpp
   unit/ImportExport/MDL/MDLHL1TestFiles.h
   unit/ImportExport/MDL/utMDLImporter_HL1_ImportSettings.cpp
   unit/ImportExport/MDL/utMDLImporter_HL1_Materials.cpp
   unit/ImportExport/MDL/utMDLImporter_HL1_Nodes.cpp
   unit/ImportExport/RAW/utRAWImportExport.cpp
   unit/ImportExport/Terragen/utTerragenImportExport.cpp
+  unit/ImportExport/Pbrt/utPbrtImportExport.cpp
 )
+
+if(ASSIMP_BUILD_USD_IMPORTER)
+  list( APPEND IMPORTERS
+    unit/utUSDImport.cpp
+  )
+endif()
 
 SET( MATERIAL
   unit/utMaterialSystem.cpp
@@ -198,12 +225,14 @@ SET( POST_PROCESSES
   unit/utGenBoundingBoxesProcess.cpp
 )
 
-SOURCE_GROUP( UnitTests\\Compiler     FILES  unit/CCompilerTest.c )
-SOURCE_GROUP( UnitTests\\Common       FILES  ${COMMON} )
-SOURCE_GROUP( UnitTests\\ImportExport FILES  ${IMPORTERS} )
-SOURCE_GROUP( UnitTests\\Material     FILES  ${MATERIAL} )
-SOURCE_GROUP( UnitTests\\Math         FILES  ${MATH} )
-SOURCE_GROUP( UnitTests\\PostProcess  FILES  ${POST_PROCESSES})
+SOURCE_GROUP( UnitTests\\Compiler      FILES unit/CCompilerTest.c )
+SOURCE_GROUP( UnitTests\\Common        FILES ${COMMON} )
+SOURCE_GROUP( UnitTests\\GeometryTools FILES ${Geometry} )
+SOURCE_GROUP( UnitTests\\ImportExport  FILES ${IMPORTERS} )
+SOURCE_GROUP( UnitTests\\Material      FILES ${MATERIAL} )
+SOURCE_GROUP( UnitTests\\Math          FILES ${MATH} )
+SOURCE_GROUP( UnitTests\\Tools         FILES ${TOOLS} )
+SOURCE_GROUP( UnitTests\\PostProcess   FILES ${POST_PROCESSES})
 
 add_executable( unit
     unit/CCompilerTest.c
@@ -211,10 +240,12 @@ add_executable( unit
     ../code/Common/Version.cpp
 	../code/Common/Base64.cpp
 	${COMMON}
+    ${Geometry}
 	${IMPORTERS}
 	${MATERIAL}
 	${MATH}
-  ${POST_PROCESSES}
+    ${POST_PROCESSES}
+    ${TOOLS}
 )
 
 if(ASSIMP_HUNTER_ENABLED)
@@ -222,7 +253,7 @@ if(ASSIMP_HUNTER_ENABLED)
     find_package(GTest CONFIG REQUIRED)
     target_link_libraries(unit GTest::gtest_main GTest::gmock)
 else()
-    target_sources(unit PUBLIC ${Assimp_SOURCE_DIR}/contrib/gtest/src/gtest-all.cc)
+    target_sources(unit PUBLIC ${Assimp_SOURCE_DIR}/contrib/googletest/googletest/src/gtest-all.cc)
 endif()
 
 # RapidJSON
@@ -244,8 +275,13 @@ ENDIF()
 
 TARGET_USE_COMMON_OUTPUT_DIRECTORY(unit)
 
-add_definitions(-DASSIMP_TEST_MODELS_DIR="${CMAKE_CURRENT_LIST_DIR}/models")
-add_definitions(-DASSIMP_TEST_MODELS_NONBSD_DIR="${CMAKE_CURRENT_LIST_DIR}/models-nonbsd")
+if(ASSIMP_INSTALL_TESTS)
+  add_definitions(-DASSIMP_TEST_MODELS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/assimp/models")
+  add_definitions(-DASSIMP_TEST_MODELS_NONBSD_DIR="${CMAKE_INSTALL_FULL_DATADIR}/assimp/models-nonbsd")
+else()
+  add_definitions(-DASSIMP_TEST_MODELS_DIR="${CMAKE_CURRENT_LIST_DIR}/models")
+  add_definitions(-DASSIMP_TEST_MODELS_NONBSD_DIR="${CMAKE_CURRENT_LIST_DIR}/models-nonbsd")
+endif()
 
 SET_PROPERTY( TARGET assimp PROPERTY DEBUG_POSTFIX ${CMAKE_DEBUG_POSTFIX} )
 
@@ -261,8 +297,25 @@ IF(MSVC)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 ENDIF()
 
+IF (ASSIMP_WARNINGS_AS_ERRORS)
+  IF (MSVC)
+    TARGET_COMPILE_OPTIONS(unit PRIVATE /W4 /WX)
+  ELSE()
+    TARGET_COMPILE_OPTIONS(unit PRIVATE -Wall -Werror)
+  ENDIF()
+ENDIF()
+
 target_link_libraries( unit assimp ${platform_libs} )
 
 add_subdirectory(headercheck)
+
+if(ASSIMP_INSTALL_TESTS)
+  set_target_properties(unit PROPERTIES OUTPUT_NAME "assimp-unit")
+  install(TARGETS unit
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  )
+  install(DIRECTORY models/ DESTINATION ${CMAKE_INSTALL_DATADIR}/assimp/models)
+  install(DIRECTORY models-nonbsd/ DESTINATION ${CMAKE_INSTALL_DATADIR}/assimp/models-nonbsd)
+endif()
 
 add_test( unittests unit )

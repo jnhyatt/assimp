@@ -2,7 +2,7 @@
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
-Copyright (c) 2006-2022, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -60,6 +60,14 @@ namespace Assimp {
 namespace FBX {
 
 using namespace Util;
+
+static float ParseTextureUVComponent(const Token &token) {
+    // Metashape can store these coordinates as binary int32 rather than float/double.
+    if (token.IsBinary() && token.begin() != token.end() && *token.begin() == 'I') {
+        return static_cast<float>(ParseTokenAsInt(token));
+    }
+    return ParseTokenAsFloat(token);
+}
 
 // ------------------------------------------------------------------------------------------------
 Material::Material(uint64_t id, const Element& element, const Document& doc, const std::string& name) :
@@ -134,26 +142,6 @@ Material::Material(uint64_t id, const Element& element, const Document& doc, con
     }
 }
 
-
-// ------------------------------------------------------------------------------------------------
-Material::~Material() {
-    // empty
-}
-
-    aiVector2D uvTrans;
-    aiVector2D uvScaling;
-    ai_real    uvRotation;
-
-    std::string type;
-    std::string relativeFileName;
-    std::string fileName;
-    std::string alphaSource;
-    std::shared_ptr<const PropertyTable> props;
-
-    unsigned int crop[4]{};
-
-    const Video* media;
-
 // ------------------------------------------------------------------------------------------------
 Texture::Texture(uint64_t id, const Element& element, const Document& doc, const std::string& name) :
         Object(id,element,name),
@@ -189,15 +177,13 @@ Texture::Texture(uint64_t id, const Element& element, const Document& doc, const
     }
 
     if(ModelUVTranslation) {
-        uvTrans = aiVector2D(ParseTokenAsFloat(GetRequiredToken(*ModelUVTranslation,0)),
-            ParseTokenAsFloat(GetRequiredToken(*ModelUVTranslation,1))
-        );
+        uvTrans = aiVector2D(ParseTextureUVComponent(GetRequiredToken(*ModelUVTranslation, 0)),
+                ParseTextureUVComponent(GetRequiredToken(*ModelUVTranslation, 1)));
     }
 
     if(ModelUVScaling) {
-        uvScaling = aiVector2D(ParseTokenAsFloat(GetRequiredToken(*ModelUVScaling,0)),
-            ParseTokenAsFloat(GetRequiredToken(*ModelUVScaling,1))
-        );
+        uvScaling = aiVector2D(ParseTextureUVComponent(GetRequiredToken(*ModelUVScaling, 0)),
+                ParseTextureUVComponent(GetRequiredToken(*ModelUVScaling, 1)));
     }
 
     if(Cropping) {
@@ -255,9 +241,7 @@ Texture::Texture(uint64_t id, const Element& element, const Document& doc, const
 }
 
 
-Texture::~Texture() {
-    // empty
-}
+Texture::~Texture() = default;
 
 LayeredTexture::LayeredTexture(uint64_t id, const Element& element, const Document& /*doc*/, const std::string& name) :
         Object(id,element,name),
@@ -276,9 +260,7 @@ LayeredTexture::LayeredTexture(uint64_t id, const Element& element, const Docume
     }
 }
 
-LayeredTexture::~LayeredTexture() {
-    // empty
-}
+LayeredTexture::~LayeredTexture() = default;
 
 void LayeredTexture::fillTexture(const Document& doc) {
     const std::vector<const Connection*>& conns = doc.GetConnectionsByDestinationSequenced(ID());
@@ -298,10 +280,10 @@ void LayeredTexture::fillTexture(const Document& doc) {
 }
 
 // ------------------------------------------------------------------------------------------------
-Video::Video(uint64_t id, const Element& element, const Document& doc, const std::string& name) :
-        Object(id,element,name),
+Video::Video(uint64_t id, const Element &element, const Document &doc, const std::string &name) :
+        Object(id, element, name),
         contentLength(0),
-        content(0) {
+        content(nullptr) {
     const Scope& sc = GetRequiredScope(element);
 
     const Element* const Type = sc["Type"];
@@ -386,9 +368,10 @@ Video::Video(uint64_t id, const Element& element, const Document& doc, const std
     props = GetPropertyTable(doc,"Video.FbxVideo",element,sc);
 }
 
-
 Video::~Video() {
-    delete[] content;
+    if (contentLength > 0) {
+        delete[] content;
+    }
 }
 
 } //!FBX

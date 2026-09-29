@@ -3,7 +3,7 @@
 Open Asset Import Library (assimp)
 ---------------------------------------------------------------------------
 
-Copyright (c) 2006-2022, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -183,7 +183,7 @@ XFileParser::XFileParser(const std::vector<char> &pBuffer) :
             P1 += ofs;
             est_out += MSZIP_BLOCK; // one decompressed block is 327861 in size
         }
-        
+
         // Allocate storage and terminating zero and do the actual uncompressing
         Compression compression;
         uncompressed.resize(est_out + 1);
@@ -437,6 +437,8 @@ void XFileParser::ParseDataObjectMesh(Mesh *pMesh) {
             ParseDataObjectSkinMeshHeader(pMesh);
         else if (objectName == "SkinWeights")
             ParseDataObjectSkinWeights(pMesh);
+        else if (objectName == "FVFData")
+            ParseDataObjectMeshFVFData(pMesh);
         else {
             ASSIMP_LOG_WARN("Unknown data object in mesh in x file");
             ParseUnknownDataObject();
@@ -454,7 +456,7 @@ void XFileParser::ParseDataObjectSkinWeights(Mesh *pMesh) {
     std::string transformNodeName;
     GetNextTokenAsString(transformNodeName);
 
-    pMesh->mBones.push_back(Bone());
+    pMesh->mBones.emplace_back();
     Bone &bone = pMesh->mBones.back();
     bone.mName = transformNodeName;
 
@@ -563,6 +565,50 @@ void XFileParser::ParseDataObjectMeshTextureCoords(Mesh *pMesh) {
 }
 
 // ------------------------------------------------------------------------------------------------
+void XFileParser::ParseDataObjectMeshFVFData(Mesh *pMesh) {
+    readHeadOfDataObject();
+
+    // Flags from d3d9types.h . For multi-UV sets, this usually is D3DFVF_XYZ (unused) and D3DFVF_TEX1, D3DFVF_TEX2, etc.
+    unsigned int flags = ReadInt();
+    
+    // Number of total values in FVF Data. 2 x Vertices x UV sets
+    unsigned int numCoords = ReadInt();
+    
+    // Number of additional UV Channels in FVFData (D3DFVF_TEX1 | D3DFVF_TEX2 | D3DFVF_TEX3)
+    unsigned int channels = (flags & 0xF00) >> 8;
+
+    if (pMesh->mNumTextures + channels > AI_MAX_NUMBER_OF_TEXTURECOORDS)
+        ThrowException("Too many sets of texture coordinates");
+
+    unsigned int baseUvSetCount = pMesh->mNumTextures;
+    pMesh->mNumTextures += channels;
+
+    if (channels > 0) {
+        const unsigned int coordCount = numCoords / (2 * channels);
+        for (unsigned int uvSet = 0; uvSet < channels; uvSet++) {
+            auto &coords = pMesh->mTexCoords[baseUvSetCount + uvSet];
+            // UVs are saved as ints, so two for each vertex
+            coords.resize(coordCount);
+        }
+
+        for (unsigned int a = 0; a < coordCount; a++) {
+            for (unsigned int uvSet = 0; uvSet < channels; uvSet++) {
+                auto &coords = pMesh->mTexCoords[baseUvSetCount + uvSet];
+
+                // They're saved as ints but they're actually floats.
+                unsigned int val = ReadInt();
+                auto x = static_cast<float>(val);
+                val = ReadInt();
+                auto y = static_cast<float>(val);
+                coords[a] = aiVector2D(x, y);
+            }
+        }
+    }
+
+    CheckForClosingBrace();
+}
+
+// ------------------------------------------------------------------------------------------------
 void XFileParser::ParseDataObjectMeshVertexColors(Mesh *pMesh) {
     readHeadOfDataObject();
     if (pMesh->mNumColorSets + 1 > AI_MAX_NUMBER_OF_COLOR_SETS)
@@ -640,7 +686,7 @@ void XFileParser::ParseDataObjectMeshMaterialList(Mesh *pMesh) {
 
             CheckForClosingBrace(); // skip }
         } else if (objectName == "Material") {
-            pMesh->mMaterials.push_back(Material());
+            pMesh->mMaterials.emplace_back();
             ParseDataObjectMaterial(&pMesh->mMaterials.back());
         } else if (objectName == ";") {
             // ignore
@@ -678,12 +724,12 @@ void XFileParser::ParseDataObjectMaterial(Material *pMaterial) {
             // some exporters write "TextureFileName" instead.
             std::string texname;
             ParseDataObjectTextureFilename(texname);
-            pMaterial->mTextures.push_back(TexEntry(texname));
+            pMaterial->mTextures.emplace_back(texname);
         } else if (objectName == "NormalmapFilename" || objectName == "NormalmapFileName") {
             // one exporter writes out the normal map in a separate filename tag
             std::string texname;
             ParseDataObjectTextureFilename(texname);
-            pMaterial->mTextures.push_back(TexEntry(texname, true));
+            pMaterial->mTextures.emplace_back(texname, true);
         } else {
             ASSIMP_LOG_WARN("Unknown data object in material in x file");
             ParseUnknownDataObject();
@@ -839,7 +885,6 @@ void XFileParser::ParseDataObjectAnimationKey(AnimBone *pAnimBone) {
 
         default:
             ThrowException("Unknown key type ", keyType, " in animation.");
-            break;
         } // end switch
 
         // key separator
@@ -1278,7 +1323,7 @@ ai_real XFileParser::ReadFloat() {
     }
 
     ai_real result = 0.0;
-    mP = fast_atoreal_move<ai_real>(mP, result);
+    mP = fast_atoreal_move(mP, result);
 
     CheckForSeparator();
 

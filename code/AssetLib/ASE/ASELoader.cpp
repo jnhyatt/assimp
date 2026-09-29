@@ -3,7 +3,7 @@
 Open Asset Import Library (assimp)
 ---------------------------------------------------------------------------
 
-Copyright (c) 2006-2022, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -44,7 +44,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef ASSIMP_BUILD_NO_ASE_IMPORTER
-
 #ifndef ASSIMP_BUILD_NO_3DS_IMPORTER
 
 // internal headers
@@ -64,10 +63,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // utilities
 #include <assimp/fast_atof.h>
 
-using namespace Assimp;
+namespace Assimp {
 using namespace Assimp::ASE;
 
-static const aiImporterDesc desc = {
+static constexpr aiImporterDesc desc = {
     "ASE Importer",
     "",
     "",
@@ -84,12 +83,6 @@ static const aiImporterDesc desc = {
 // Constructor to be privately used by Importer
 ASEImporter::ASEImporter() :
         mParser(), mBuffer(), pcScene(), configRecomputeNormals(), noSkeletonMesh() {
-    // empty
-}
-
-// ------------------------------------------------------------------------------------------------
-// Destructor, private as well
-ASEImporter::~ASEImporter() {
     // empty
 }
 
@@ -124,14 +117,14 @@ void ASEImporter::InternReadFile(const std::string &pFile,
     std::unique_ptr<IOStream> file(pIOHandler->Open(pFile, "rb"));
 
     // Check whether we can read from the file
-    if (file.get() == nullptr) {
+    if (file == nullptr) {
         throw DeadlyImportError("Failed to open ASE file ", pFile, ".");
     }
 
     // Allocate storage and copy the contents of the file to a memory buffer
     std::vector<char> mBuffer2;
     TextFileToBuffer(file.get(), mBuffer2);
-
+    const size_t fileSize = mBuffer2.size();
     this->mBuffer = &mBuffer2[0];
     this->pcScene = pScene;
 
@@ -153,7 +146,7 @@ void ASEImporter::InternReadFile(const std::string &pFile,
     };
 
     // Construct an ASE parser and parse the file
-    ASE::Parser parser(mBuffer, defaultFormat);
+    ASE::Parser parser(mBuffer, fileSize, defaultFormat);
     mParser = &parser;
     mParser->Parse();
 
@@ -196,6 +189,8 @@ void ASEImporter::InternReadFile(const std::string &pFile,
         aiMesh **pp = pScene->mMeshes = new aiMesh *[pScene->mNumMeshes];
         for (std::vector<aiMesh *>::const_iterator i = avOutMeshes.begin(); i != avOutMeshes.end(); ++i) {
             if (!(*i)->mNumFaces) {
+                (*i)->mColors[2] = nullptr;
+                delete *i;
                 continue;
             }
             *pp++ = *i;
@@ -265,7 +260,7 @@ void ASEImporter::GenerateDefaultMaterial() {
     }
     if (bHas || mParser->m_vMaterials.empty()) {
         // add a simple material without submaterials to the parser's list
-        mParser->m_vMaterials.push_back(ASE::Material(AI_DEFAULT_MATERIAL_NAME));
+        mParser->m_vMaterials.emplace_back(AI_DEFAULT_MATERIAL_NAME);
         ASE::Material &mat = mParser->m_vMaterials.back();
 
         mat.mDiffuse = aiColor3D(0.6f, 0.6f, 0.6f);
@@ -327,21 +322,6 @@ void ASEImporter::BuildAnimations(const std::vector<BaseNode *> &nodes) {
                 // <baseName>.Target.
                 aiNodeAnim *nd = pcAnim->mChannels[iNum++] = new aiNodeAnim();
                 nd->mNodeName.Set(me->mName + ".Target");
-
-                // If there is no input position channel we will need
-                // to supply the default position from the node's
-                // local transformation matrix.
-                /*TargetAnimationHelper helper;
-                if (me->mAnim.akeyPositions.empty())
-                {
-                    aiMatrix4x4& mat = (*i)->mTransform;
-                    helper.SetFixedMainAnimationChannel(aiVector3D(
-                        mat.a4, mat.b4, mat.c4));
-                }
-                else helper.SetMainAnimationChannel (&me->mAnim.akeyPositions);
-                helper.SetTargetAnimationChannel (&me->mTargetAnim.akeyPositions);
-
-                helper.Process(&me->mTargetAnim.akeyPositions);*/
 
                 // Allocate the key array and fill it
                 nd->mNumPositionKeys = (unsigned int)me->mTargetAnim.akeyPositions.size();
@@ -468,10 +448,9 @@ void ASEImporter::BuildLights() {
 }
 
 // ------------------------------------------------------------------------------------------------
-void ASEImporter::AddNodes(const std::vector<BaseNode *> &nodes,
-        aiNode *pcParent, const char *szName) {
+void ASEImporter::AddNodes(const std::vector<BaseNode *> &nodes, aiNode *pcParent, const std::string &name) {
     aiMatrix4x4 m;
-    AddNodes(nodes, pcParent, szName, m);
+    AddNodes(nodes, pcParent, name, m);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -528,10 +507,9 @@ void ASEImporter::AddMeshes(const ASE::BaseNode *snode, aiNode *node) {
 
 // ------------------------------------------------------------------------------------------------
 // Add child nodes to a given parent node
-void ASEImporter::AddNodes(const std::vector<BaseNode *> &nodes,
-        aiNode *pcParent, const char *szName,
+void ASEImporter::AddNodes(const std::vector<BaseNode *> &nodes, aiNode *pcParent, const std::string &name,
         const aiMatrix4x4 &mat) {
-    const size_t len = szName ? ::strlen(szName) : 0;
+    const size_t len = name.size();
     ai_assert(4 <= AI_MAX_NUMBER_OF_COLOR_SETS);
 
     // Receives child nodes for the pcParent node
@@ -541,16 +519,18 @@ void ASEImporter::AddNodes(const std::vector<BaseNode *> &nodes,
     // which has *us* as parent.
     for (std::vector<BaseNode *>::const_iterator it = nodes.begin(), end = nodes.end(); it != end; ++it) {
         const BaseNode *snode = *it;
-        if (szName) {
-            if (len != snode->mParent.length() || ::strcmp(szName, snode->mParent.c_str()))
+        if (!name.empty()) {
+            if (len != snode->mParent.length() || name != snode->mParent.c_str()) {
                 continue;
-        } else if (snode->mParent.length())
+            }
+        } else if (snode->mParent.length()) {
             continue;
+        }
 
         (*it)->mProcessed = true;
 
         // Allocate a new node and add it to the output data structure
-        apcNodes.push_back(new aiNode());
+        apcNodes.push_back(new aiNode);
         aiNode *node = apcNodes.back();
 
         node->mName.Set((snode->mName.length() ? snode->mName.c_str() : "Unnamed_Node"));
@@ -563,7 +543,7 @@ void ASEImporter::AddNodes(const std::vector<BaseNode *> &nodes,
 
         // Add sub nodes - prevent stack overflow due to recursive parenting
         if (node->mName != node->mParent->mName && node->mName != node->mParent->mParent->mName) {
-            AddNodes(nodes, node, node->mName.data, snode->mTransform);
+            AddNodes(nodes, node, node->mName.C_Str(), snode->mTransform);
         }
 
         // Further processing depends on the type of the node
@@ -595,8 +575,8 @@ void ASEImporter::AddNodes(const std::vector<BaseNode *> &nodes,
             nd->mParent = node;
 
             // The .Target node is always the first child node
-            for (unsigned int m = 0; m < node->mNumChildren; ++m)
-                node->mChildren[m + 1] = node->mChildren[m];
+            for (unsigned int m = node->mNumChildren; m > 0; --m)
+                node->mChildren[m] = node->mChildren[m - 1];
 
             node->mChildren[0] = nd;
             node->mNumChildren++;
@@ -641,7 +621,8 @@ void ASEImporter::BuildNodes(std::vector<BaseNode *> &nodes) {
     }
 
     // add all nodes
-    AddNodes(nodes, ch, nullptr);
+    static const std::string none = "";
+    AddNodes(nodes, ch, none);
 
     // now iterate through al nodes and find those that have not yet
     // been added to the nodegraph (= their parent could not be recognized)
@@ -752,16 +733,28 @@ void ASEImporter::BuildUniqueRepresentation(ASE::Mesh &mesh) {
     unsigned int iCurrent = 0, fi = 0;
     for (std::vector<ASE::Face>::iterator i = mesh.mFaces.begin(); i != mesh.mFaces.end(); ++i, ++fi) {
         for (unsigned int n = 0; n < 3; ++n, ++iCurrent) {
+            const uint32_t curIndex = (*i).mIndices[n];
+            if (curIndex >= mesh.mPositions.size()) {
+                throw DeadlyImportError("ASE: Invalid vertex index in face ", fi, ".");
+            }
             mPositions[iCurrent] = mesh.mPositions[(*i).mIndices[n]];
 
             // add texture coordinates
             for (unsigned int c = 0; c < AI_MAX_NUMBER_OF_TEXTURECOORDS; ++c) {
                 if (mesh.amTexCoords[c].empty()) break;
-                amTexCoords[c][iCurrent] = mesh.amTexCoords[c][(*i).amUVIndices[c][n]];
+                const uint32_t uvIndex = (*i).amUVIndices[c][n];
+                if (uvIndex >= mesh.amTexCoords[c].size()) {
+                    throw DeadlyImportError("ASE: Invalid UV index in face ", fi, ".");
+                }
+                amTexCoords[c][iCurrent] = mesh.amTexCoords[c][uvIndex];
             }
             // add vertex colors
             if (!mesh.mVertexColors.empty()) {
-                mVertexColors[iCurrent] = mesh.mVertexColors[(*i).mColorIndices[n]];
+                const uint32_t colorIndex = (*i).mColorIndices[n];
+                if (colorIndex >= mesh.mVertexColors.size()) {
+                    throw DeadlyImportError("ASE: Invalid vertex color index in face ", fi, ".");
+                }
+                mVertexColors[iCurrent] = mesh.mVertexColors[colorIndex];
             }
             // add normal vectors
             if (!mesh.mNormals.empty()) {
@@ -870,6 +863,7 @@ void ASEImporter::ConvertMaterial(ASE::Material &mat) {
         unsigned int iWire = 1;
         mat.pcInstance->AddProperty<int>((int *)&iWire, 1, AI_MATKEY_ENABLE_WIREFRAME);
     }
+    // fallthrough
     case D3DS::Discreet3DS::Gouraud:
         eShading = aiShadingMode_Gouraud;
         break;
@@ -925,7 +919,7 @@ void ASEImporter::ConvertMeshes(ASE::Mesh &mesh, std::vector<aiMesh *> &avOutMes
         ASSIMP_LOG_WARN("Material index is out of range");
     }
 
-    // If the material the mesh is assigned to is consisting of submeshes, split it
+    // If the material the mesh is assigned to consists of submeshes, split it
     if (!mParser->m_vMaterials[mesh.iMaterialIndex].avSubMaterials.empty()) {
         std::vector<ASE::Material> vSubMaterials = mParser->m_vMaterials[mesh.iMaterialIndex].avSubMaterials;
 
@@ -1004,8 +998,8 @@ void ASEImporter::ConvertMeshes(ASE::Mesh &mesh, std::vector<aiMesh *> &avOutMes
                                             blubb != mesh.mBoneVertices[iIndex2].mBoneWeights.end(); ++blubb) {
 
                                         // NOTE: illegal cases have already been filtered out
-                                        avOutputBones[(*blubb).first].push_back(std::pair<unsigned int, float>(
-                                                iBase, (*blubb).second));
+                                        avOutputBones[(*blubb).first].emplace_back(
+                                                iBase, (*blubb).second);
                                     }
                                 }
                             }
@@ -1283,6 +1277,7 @@ bool ASEImporter::GenerateNormals(ASE::Mesh &mesh) {
     return false;
 }
 
-#endif // ASSIMP_BUILD_NO_3DS_IMPORTER
+}
 
-#endif // !! ASSIMP_BUILD_NO_BASE_IMPORTER
+#endif // ASSIMP_BUILD_NO_3DS_IMPORTER
+#endif // ASSIMP_BUILD_NO_ASE_IMPORTER
